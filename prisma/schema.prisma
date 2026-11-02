@@ -1,0 +1,306 @@
+// PES University Canteen Automation System — data model.
+// Requirements: requirements/srs.md §8. Design notes: architecture/data-model.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  STAFF
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum OrderStatus {
+  PLACED
+  ACCEPTED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+enum PaymentMethod {
+  CASH_ON_PICKUP
+  SIMULATED_ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+/// Students, canteen staff and administrators share one identity table (FR-05).
+model User {
+  id           String        @id @default(cuid())
+  name         String        @db.VarChar(100)
+  email        String        @unique @db.VarChar(150)
+  /// University SRN for students; unique when present (FR-02).
+  srn          String?       @unique @db.VarChar(20)
+  phone        String?       @db.VarChar(15)
+  passwordHash String        @map("password_hash")
+  role         Role          @default(STUDENT)
+  status       AccountStatus @default(ACTIVE)
+  /// Assigned stall for STAFF accounts (FR-07, BR-07).
+  stallId      String?       @map("stall_id")
+  stall        Stall?        @relation(fields: [stallId], references: [id], onDelete: SetNull)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  orders         Order[]
+  statusChanges  OrderStatusHistory[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+  recommendation RecommendationEvent[]
+
+  @@index([role, status])
+  @@index([stallId])
+  @@map("app_user")
+}
+
+model Stall {
+  id           String   @id @default(cuid())
+  name         String   @unique @db.VarChar(100)
+  description  String?  @db.VarChar(500)
+  location     String?  @db.VarChar(120)
+  /// Operating status toggled by staff/admin (FR-11, FR-19).
+  isOpen       Boolean  @default(true) @map("is_open")
+  /// Daily operating window in minutes from midnight, campus local time.
+  opensAt      Int      @default(480) @map("opens_at")
+  closesAt     Int      @default(1200) @map("closes_at")
+  /// Default maximum number of orders per 15-minute pickup slot (FR-41, FR-43).
+  slotCapacity Int      @default(10) @map("slot_capacity")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  staff           User[]
+  menuItems       MenuItem[]
+  slots           PickupSlot[]
+  orders          Order[]
+  notifications   Notification[]
+  forecastResults ForecastResult[]
+
+  @@map("stall")
+}
+
+model MenuItem {
+  id              String   @id @default(cuid())
+  stallId         String   @map("stall_id")
+  stall           Stall    @relation(fields: [stallId], references: [id], onDelete: Restrict)
+  name            String   @db.VarChar(100)
+  description     String?  @db.VarChar(300)
+  category        String   @default("Meals") @db.VarChar(40)
+  price           Decimal  @db.Decimal(10, 2)
+  /// Preparation time in minutes (FR-16).
+  prepTimeMinutes Int      @default(10) @map("prep_time_minutes")
+  isAvailable     Boolean  @default(true) @map("is_available")
+  isVeg           Boolean  @default(true) @map("is_veg")
+  /// Archived items are hidden from menus but kept for order history (§8.1.7).
+  isArchived      Boolean  @default(false) @map("is_archived")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  orderItems      OrderItem[]
+  forecastResults ForecastResult[]
+  recommendation  RecommendationEvent[]
+
+  @@unique([stallId, name])
+  @@index([stallId, isAvailable])
+  @@map("menu_item")
+}
+
+/// 15-minute pickup window. Rows are created on first booking; `bookedCount`
+/// is incremented with a conditional update so capacity can never be exceeded
+/// (FR-41, FR-42, NFR-16). See decisions/0003-slot-capacity-model.md.
+model PickupSlot {
+  id          String   @id @default(cuid())
+  stallId     String   @map("stall_id")
+  stall       Stall    @relation(fields: [stallId], references: [id], onDelete: Restrict)
+  startsAt    DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt      DateTime @map("ends_at") @db.Timestamptz(3)
+  capacity    Int
+  bookedCount Int      @default(0) @map("booked_count")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  orders Order[]
+
+  @@unique([stallId, startsAt])
+  @@map("pickup_slot")
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  /// Short human-readable unique reference shown to students and staff (FR-28).
+  code           String        @unique @db.VarChar(12)
+  studentId      String        @map("student_id")
+  student        User          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  stallId        String        @map("stall_id")
+  stall          Stall         @relation(fields: [stallId], references: [id], onDelete: Restrict)
+  slotId         String        @map("slot_id")
+  slot           PickupSlot    @relation(fields: [slotId], references: [id], onDelete: Restrict)
+  status         OrderStatus   @default(PLACED)
+  totalAmount    Decimal       @map("total_amount") @db.Decimal(10, 2)
+  paymentMethod  PaymentMethod @map("payment_method")
+  paymentStatus  PaymentStatus @default(PENDING) @map("payment_status")
+  note           String?       @db.VarChar(200)
+  /// Client-generated key so retried submissions return the same order (FR-37).
+  idempotencyKey String?       @map("idempotency_key") @db.VarChar(64)
+  /// Demo/seed rows are flagged so ML evaluation can exclude them (SRS §8.2).
+  isSynthetic    Boolean       @default(false) @map("is_synthetic")
+  cancelReason   String?       @map("cancel_reason") @db.VarChar(200)
+  placedAt       DateTime      @default(now()) @map("placed_at") @db.Timestamptz(3)
+  acceptedAt     DateTime?     @map("accepted_at") @db.Timestamptz(3)
+  preparingAt    DateTime?     @map("preparing_at") @db.Timestamptz(3)
+  readyAt        DateTime?     @map("ready_at") @db.Timestamptz(3)
+  completedAt    DateTime?     @map("completed_at") @db.Timestamptz(3)
+  cancelledAt    DateTime?     @map("cancelled_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  items         OrderItem[]
+  payment       Payment?
+  history       OrderStatusHistory[]
+  notifications Notification[]
+
+  @@unique([studentId, idempotencyKey])
+  @@index([studentId, placedAt(sort: Desc)])
+  @@index([stallId, status])
+  @@index([stallId, placedAt])
+  @@index([slotId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String   @map("order_id")
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String   @map("menu_item_id")
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  /// Purchase-time snapshots; never updated after creation (NFR-42, BR-09).
+  itemName   String   @map("item_name") @db.VarChar(100)
+  unitPrice  Decimal  @map("unit_price") @db.Decimal(10, 2)
+  quantity   Int
+
+  @@index([orderId])
+  @@index([menuItemId])
+  @@map("order_item")
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  orderId        String        @unique @map("order_id")
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount         Decimal       @db.Decimal(10, 2)
+  method         PaymentMethod
+  status         PaymentStatus @default(PENDING)
+  transactionRef String?       @unique @map("transaction_ref") @db.VarChar(64)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("payment")
+}
+
+model OrderStatusHistory {
+  id         String       @id @default(cuid())
+  orderId    String       @map("order_id")
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  actorId    String?      @map("actor_id")
+  actor      User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  note       String?      @db.VarChar(200)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+/// Dashboard notifications (FR-90, FR-91). Addressed to a user or to a stall's staff.
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stallId   String?  @map("stall_id")
+  stall     Stall?   @relation(fields: [stallId], references: [id], onDelete: Cascade)
+  orderId   String?  @map("order_id")
+  order     Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  message   String   @db.VarChar(300)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([stallId, createdAt(sort: Desc)])
+  @@map("notification")
+}
+
+/// Administrative and security events (FR-65, NFR-14). Never stores secrets.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?  @map("actor_id")
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String   @db.VarChar(60)
+  entity    String   @db.VarChar(40)
+  entityId  String?  @map("entity_id") @db.VarChar(40)
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_log")
+}
+
+/// Key/value system configuration managed by administrators (FR-64).
+model SystemSetting {
+  key       String   @id @db.VarChar(60)
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("system_setting")
+}
+
+/// Written by the external ML service (ml/). The app only reads it (FR-69, FR-74).
+model ForecastResult {
+  id                String   @id @default(cuid())
+  stallId           String   @map("stall_id")
+  stall             Stall    @relation(fields: [stallId], references: [id], onDelete: Cascade)
+  menuItemId        String   @map("menu_item_id")
+  menuItem          MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  /// Campus-local calendar date the forecast applies to.
+  forecastDate      DateTime @map("forecast_date") @db.Date
+  /// Aggregation period, e.g. "DAY" or "HH:MM-HH:MM" (FR-70).
+  period            String   @default("DAY") @db.VarChar(20)
+  predictedQuantity Decimal  @map("predicted_quantity") @db.Decimal(10, 2)
+  modelVersion      String   @map("model_version") @db.VarChar(40)
+  generatedAt       DateTime @default(now()) @map("generated_at") @db.Timestamptz(3)
+
+  @@unique([menuItemId, forecastDate, period, modelVersion])
+  @@index([stallId, forecastDate])
+  @@map("forecast_result")
+}
+
+/// Recommendation impressions/selections for offline evaluation (FR-82, NFR-53).
+model RecommendationEvent {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  menuItemId String   @map("menu_item_id")
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  /// IMPRESSION | CLICK | ADD_TO_CART
+  event      String   @db.VarChar(20)
+  strategy   String   @db.VarChar(40)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([menuItemId, event])
+  @@map("recommendation_event")
+}
