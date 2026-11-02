@@ -1,0 +1,18 @@
+---
+description: Use ADCE for artifact context before repository-level changes
+alwaysApply: true
+---
+
+# ADCE
+
+This repository uses ADCE (Artifact-Driven Context Engine).
+
+Before repository-level modifications:
+
+1. Run `adce status` (or `adce doctor`).
+2. Run `adce context --task "<current task>" --format markdown`.
+3. Follow brief sections in order: MUST READ → CAUTION → TRUST ORDER → ALSO RELEVANT.
+4. Do not trust CAUTION artifacts over TRUST ORDER / VERIFIED sources.
+5. Run `adce conflicts` (and `adce analyze --skip-ml` if useful) when CAUTION is non-empty.
+6. Prefer `adce authority set` for known trust; run `adce structure` before large changes.
+7. If software-eng stubs (`requirements/`, `design/`, `architecture/`, …) are empty or still stub text, fill them with real knowledge — or draft them when the developer asks — then have a human review and `adce artifact verify`.
