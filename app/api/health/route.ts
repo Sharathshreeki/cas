@@ -7,7 +7,10 @@ export async function GET() {
   try {
     await db.$queryRaw`SELECT 1`;
     return Response.json({ status: "ok", database: "ok" });
-  } catch {
+  } catch (error) {
+    // Logged server-side only (visible in hosting logs); credentials are masked.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Health check: database unavailable:", message.replace(/\/\/[^@\s]+@/g, "//***@"));
     return Response.json({ status: "degraded", database: "unavailable" }, { status: 503 });
   }
 }

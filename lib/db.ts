@@ -3,7 +3,12 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/lib/generated/prisma/client";
 
 function createClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    // Logged rather than thrown so builds without a database still succeed.
+    console.error("DATABASE_URL is not set — database queries will fail. See .env.example.");
+  }
+  const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }
 
