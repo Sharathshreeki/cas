@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_QTY_PER_ITEM } from "@/lib/domain/limits";
 
 // Shared input validation (NFR-10, NFR-24). Used by Server Actions and Route Handlers.
 
@@ -61,8 +62,6 @@ export const changePasswordSchema = z
     error: "Passwords do not match.",
     path: ["confirmPassword"],
   });
-
-export const MAX_QTY_PER_ITEM = 10;
 
 export const placeOrderSchema = z.object({
   stallId: z.string().min(1),
