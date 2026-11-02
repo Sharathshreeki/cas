@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PES University Canteen Automation System
 
-## Getting Started
+Web app for ordering ahead from campus canteen stalls: students browse menus, book a 15-minute pickup
+slot and track their order; staff run a live order board and manage their menu; administrators manage
+stalls, users and policies. Requirements: [`requirements/srs.md`](requirements/srs.md) ·
+implementation status: [`requirements/overview.md`](requirements/overview.md).
 
-First, run the development server:
+**Stack:** Next.js 16 (App Router, Cache Components) · React 19 · TypeScript · Prisma 7 + PostgreSQL ·
+shadcn/ui + Tailwind CSS 4 · Motion · Zod · Vitest. The ML modules (`ml/`) are not implemented yet.
+
+## Setup
+
+Requirements: Node.js 20+, PostgreSQL 14+.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install                      # also generates the Prisma client
+cp .env.example .env             # then edit the values
+createdb cas                     # and `createdb cas_test` for integration tests
+npm run db:migrate               # apply migrations
+npm run db:seed                  # demo accounts, stalls, menus, synthetic history (wipes app tables!)
+npm run dev                      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment variables (NFR-38)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `SESSION_SECRET` | yes | ≥ 32 random characters for signing session cookies (`openssl rand -base64 32`) |
+| `TEST_DATABASE_URL` | for integration tests | Separate database; must differ from `DATABASE_URL` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Demo accounts (after seeding)
 
-## Learn More
+| Role | Email | Password |
+|---|---|---|
+| Student | `student@pesu.pes.edu` | `Student@1234` |
+| Staff (Main Canteen) | `staff.main@canteen.pes.edu` | `Staff@1234` |
+| Staff (Food Court Express / Juice Junction / Snack Shack) | `staff.express@…`, `staff.juice@…`, `staff.snacks@canteen.pes.edu` | `Staff@1234` |
+| Admin | `admin@canteen.pes.edu` | `Admin@1234` |
 
-To learn more about Next.js, take a look at the following resources:
+Seeded orders are **synthetic** (`orders.is_synthetic = true`).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Command | What it does |
+|---|---|
+| `npm run dev` / `build` / `start` | Develop, build, serve |
+| `npm test` | Unit tests |
+| `npm run test:integration` | Integration tests against `TEST_DATABASE_URL` |
+| `npm run typecheck` / `lint` | Static checks |
+| `npm run db:migrate` / `db:deploy` / `db:seed` | Prisma migrate (dev) / deploy (prod) / seed |
 
-## Deploy on Vercel
+## Project layout
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+app/            routes: (site) student pages, (auth), staff/, admin/, api/, actions/ (Server Actions)
+components/     UI (shadcn in components/ui)
+lib/            auth, domain rules, services, validation, time zone helpers
+prisma/         schema, migrations, seed
+ml/             Python ML modules (to be added)
+tests/          unit/ and integration/
+requirements/ architecture/ design/ decisions/ security/ schemas/ docs/   project artifacts (ADCE)
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Key decisions are in [`decisions/`](decisions/0001-record-architecture-decisions.md). Backup and restore:
+[`docs/operations/backup-restore.md`](docs/operations/backup-restore.md).

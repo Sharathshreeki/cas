@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forecast-result.schema.json",
+  "title": "ForecastResultRow",
+  "description": "Row the ML service (ml/) writes to the forecast_result table (ADR 0006). The staff forecast page reads the latest model_version for a stall and date.",
+  "type": "object",
+  "required": ["stall_id", "menu_item_id", "forecast_date", "period", "predicted_quantity", "model_version"],
+  "properties": {
+    "id": { "type": "string", "description": "Any unique string, e.g. a UUID." },
+    "stall_id": { "type": "string" },
+    "menu_item_id": { "type": "string" },
+    "forecast_date": { "type": "string", "format": "date", "description": "Campus-local (Asia/Kolkata) date." },
+    "period": { "type": "string", "maxLength": 20, "default": "DAY", "description": "Aggregation period. The UI currently reads DAY." },
+    "predicted_quantity": { "type": "number", "minimum": 0, "description": "Predicted portions for the period." },
+    "model_version": { "type": "string", "maxLength": 40 },
+    "generated_at": { "type": "string", "format": "date-time" }
+  }
+}
