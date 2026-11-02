@@ -18,7 +18,8 @@ export type NotificationItem = {
   orderCode: string | null;
 };
 
-export function NotificationList({ items, orderHref }: { items: NotificationItem[]; orderHref?: (code: string) => string }) {
+/** `orderBasePath` (e.g. "/orders") adds a "View" link to each order's page. */
+export function NotificationList({ items, orderBasePath }: { items: NotificationItem[]; orderBasePath?: string }) {
   const [pending, startTransition] = useTransition();
   const unread = items.filter((i) => !i.isRead).length;
 
@@ -47,9 +48,9 @@ export function NotificationList({ items, orderHref }: { items: NotificationItem
               <p className={cn("text-sm", !n.isRead && "font-medium")}>{n.message}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">{formatDateTime(n.createdAt)}</p>
             </div>
-            {n.orderCode && orderHref ? (
+            {n.orderCode && orderBasePath ? (
               <Button asChild size="sm" variant="ghost">
-                <Link href={orderHref(n.orderCode)}>View</Link>
+                <Link href={`${orderBasePath}/${n.orderCode}`}>View</Link>
               </Button>
             ) : null}
           </StaggerItem>

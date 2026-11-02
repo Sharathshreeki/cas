@@ -26,7 +26,7 @@ async function Notifications() {
   return (
     <>
       <AutoRefresh intervalMs={20_000} />
-      <NotificationList items={items} orderHref={(code) => `/orders/${code}`} />
+      <NotificationList items={items} orderBasePath="/orders" />
     </>
   );
 }
