@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "recommendation-result.schema.json",
+  "title": "RecommendationResultRow",
+  "description": "Row the ML recommender (ml/) writes to the recommendation_result table (ADR 0006). Each run replaces all rows. The app reads the latest model_version, filters unavailable items, and falls back to the global ranking (user_id null).",
+  "type": "object",
+  "required": ["menu_item_id", "rank", "score", "reason", "model_version"],
+  "properties": {
+    "id": { "type": "string" },
+    "user_id": { "type": ["string", "null"], "description": "Student id, or null for the global ranking." },
+    "menu_item_id": { "type": "string" },
+    "rank": { "type": "integer", "minimum": 1 },
+    "score": { "type": "number" },
+    "reason": { "enum": ["REORDER", "SIMILAR", "POPULAR"] },
+    "model_version": { "type": "string", "maxLength": 40 },
+    "generated_at": { "type": "string", "format": "date-time" }
+  }
+}

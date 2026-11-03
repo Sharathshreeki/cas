@@ -17,6 +17,8 @@ Source of truth: `prisma/schema.prisma` (migrations in `prisma/migrations/`). Re
 | `system_setting` | Admin settings | key/value JSON with code defaults (`lib/settings.ts`) |
 | `forecast_result` | ML output (written by `ml/`) | item, date, period, predicted quantity, model version, generated time |
 | `recommendation_event` | Recommendation interactions | CLICK / ADD_TO_CART, strategy |
+| `recommendation_result` | ML output (written by `ml/`) | per-student or global (`user_id` NULL) ranking, score, reason, model version |
+| `model_run` | ML training runs | task, model version, algorithm, held-out metrics JSON, synthetic share, data range |
 
 ## Conventions
 

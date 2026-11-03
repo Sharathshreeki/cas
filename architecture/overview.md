@@ -17,8 +17,8 @@ Next.js 16 app (App Router, Cache Components, React 19)
    └─ lib/db.ts ........... Prisma Client (driver adapter @prisma/adapter-pg)
    │
    ▼
-PostgreSQL (`cas`) ◄──── ml/ (Python, NOT YET IMPLEMENTED — folder intentionally empty)
-                          reads orders, writes forecast_result
+PostgreSQL (`cas`) ◄──── ml/ (Python batch jobs: python -m canteen_ml all)
+                          reads orders; writes forecast_result, recommendation_result, model_run
 ```
 
 ## Layers (NFR-33)
@@ -30,7 +30,7 @@ PostgreSQL (`cas`) ◄──── ml/ (Python, NOT YET IMPLEMENTED — folder i
 | Services | `lib/services/` | Business logic and scoped queries; return plain DTOs (no `Decimal`). |
 | Domain | `lib/domain/` | Pure functions, importable by client and server. |
 | Data | `prisma/schema.prisma`, `lib/db.ts` | Schema and migrations only through Prisma. |
-| ML | `ml/` + `forecast_result`, `recommendation_event` | Integration through the database (ADR 0006). |
+| ML | `ml/canteen_ml` + `forecast_result`, `recommendation_result`, `model_run`, `recommendation_event` | Python batch jobs; integration through the database only (ADR 0006, `ml/README.md`). |
 
 ## Rendering model
 

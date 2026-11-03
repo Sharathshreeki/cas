@@ -15,8 +15,8 @@ Legend: ✅ implemented · 🟡 implemented with a documented simplification · 
 | Payments | FR-47–FR-52 | 🟡 | Cash at pickup + **simulated** online payment; no real gateway (ADR 0004) |
 | Staff dashboard | FR-53–FR-59 | ✅ | Live board, menu, slots, reports, forecast page |
 | Admin dashboard | FR-60–FR-65 | ✅ | Stalls, users, settings, reports, audit log |
-| Demand forecasting | FR-66–FR-74 | 🟡 | Data collection, aggregation, baseline + "insufficient data", display of model output from `forecast_result`. **ML model not implemented** (`ml/` empty). FR-71/73 pending ML. |
-| Recommendations | FR-75–FR-82 | 🟡 | Personal-history / popularity / newest heuristics, availability exclusion, interaction logging. **ML model not implemented.** |
+| Demand forecasting | FR-66–FR-74 | ✅ | `ml/`: random forest / gradient boosting vs seasonal baselines, chronological split, MAE, model version + run record; baseline / "insufficient data" fallback in the app. Evaluated on **synthetic** data only so far. Retraining is a manual or scheduled command. |
+| Recommendations | FR-75–FR-82 | ✅ | `ml/`: hybrid reorder + item-item CF + popularity, leave-last-order-out evaluation (hit rate, precision, recall, MRR); app filters availability and falls back to heuristics. Evaluated on **synthetic** data only so far. |
 | Geo-fencing | FR-83–FR-86 | ✅ | Optional, off by default, location never stored (ADR 0007) |
 | Reporting & notifications | FR-87–FR-92 | ✅ | Dashboard notifications via polling; no SMS/email/push |
 | Performance | NFR-01–NFR-05 | ⏳ | Load test not yet run (TC-18) |

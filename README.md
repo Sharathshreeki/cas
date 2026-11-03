@@ -6,7 +6,7 @@ stalls, users and policies. Requirements: [`requirements/srs.md`](requirements/s
 implementation status: [`requirements/overview.md`](requirements/overview.md).
 
 **Stack:** Next.js 16 (App Router, Cache Components) · React 19 · TypeScript · Prisma 7 + PostgreSQL ·
-shadcn/ui + Tailwind CSS 4 · Motion · Zod · Vitest. The ML modules (`ml/`) are not implemented yet.
+shadcn/ui + Tailwind CSS 4 · Motion · Zod · Vitest · Python 3 (pandas, scikit-learn) for the ML jobs in [`ml/`](ml/README.md).
 
 ## Setup
 
@@ -49,6 +49,7 @@ Seeded orders are **synthetic** (`orders.is_synthetic = true`).
 | `npm run test:integration` | Integration tests against `TEST_DATABASE_URL` |
 | `npm run typecheck` / `lint` | Static checks |
 | `npm run db:migrate` / `db:deploy` / `db:seed` | Prisma migrate (dev) / deploy (prod) / seed |
+| `npm run ml:train` / `ml:test` | Train and publish the ML models / run their tests (set up `ml/.venv` first, see `ml/README.md`) |
 
 ## Project layout
 
@@ -57,7 +58,7 @@ app/            routes: (site) student pages, (auth), staff/, admin/, api/, acti
 components/     UI (shadcn in components/ui)
 lib/            auth, domain rules, services, validation, time zone helpers
 prisma/         schema, migrations, seed
-ml/             Python ML modules (to be added)
+ml/             Python ML jobs: demand forecasting and recommendations
 tests/          unit/ and integration/
 requirements/ architecture/ design/ decisions/ security/ schemas/ docs/   project artifacts (ADCE)
 ```
