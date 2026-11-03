@@ -60,11 +60,12 @@ model User {
   createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  orders         Order[]
-  statusChanges  OrderStatusHistory[]
-  notifications  Notification[]
-  auditLogs      AuditLog[]
-  recommendation RecommendationEvent[]
+  orders                Order[]
+  statusChanges         OrderStatusHistory[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  recommendation        RecommendationEvent[]
+  recommendationResults RecommendationResult[]
 
   @@index([role, status])
   @@index([stallId])
@@ -113,9 +114,10 @@ model MenuItem {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  orderItems      OrderItem[]
-  forecastResults ForecastResult[]
-  recommendation  RecommendationEvent[]
+  orderItems            OrderItem[]
+  forecastResults       ForecastResult[]
+  recommendation        RecommendationEvent[]
+  recommendationResults RecommendationResult[]
 
   @@unique([stallId, name])
   @@index([stallId, isAvailable])
@@ -303,4 +305,46 @@ model RecommendationEvent {
 
   @@index([menuItemId, event])
   @@map("recommendation_event")
+}
+
+/// Ranked items written by the ML recommender (ml/). `userId` null = global
+/// ranking for new or anonymous users. The app filters availability at read
+/// time (BR-11), so rows may include items that are currently sold out.
+model RecommendationResult {
+  id           String   @id @default(cuid())
+  userId       String?  @map("user_id")
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menuItemId   String   @map("menu_item_id")
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  rank         Int
+  score        Float
+  /// Why the item was suggested, e.g. "REORDER", "SIMILAR", "POPULAR".
+  reason       String   @db.VarChar(20)
+  modelVersion String   @map("model_version") @db.VarChar(40)
+  generatedAt  DateTime @default(now()) @map("generated_at") @db.Timestamptz(3)
+
+  @@index([userId, modelVersion, rank])
+  @@index([modelVersion])
+  @@map("recommendation_result")
+}
+
+/// One training/evaluation run of an ML model (FR-71, FR-74, NFR-52, NFR-58).
+model ModelRun {
+  id             String   @id @default(cuid())
+  /// FORECAST | RECOMMEND
+  task           String   @db.VarChar(20)
+  modelVersion   String   @map("model_version") @db.VarChar(40)
+  algorithm      String   @db.VarChar(60)
+  /// Evaluation metrics, including the baseline the model was compared against.
+  metrics        Json
+  /// Share of training rows that came from synthetic (seeded) orders, 0–1 (SRS §8.2).
+  syntheticShare Float    @map("synthetic_share")
+  trainRows      Int      @map("train_rows")
+  dataFrom       DateTime @map("data_from") @db.Date
+  dataTo         DateTime @map("data_to") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([task, modelVersion])
+  @@index([task, createdAt(sort: Desc)])
+  @@map("model_run")
 }

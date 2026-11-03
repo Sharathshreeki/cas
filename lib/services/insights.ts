@@ -3,21 +3,29 @@ import { db } from "@/lib/db";
 import { toMenuItemDTO, type MenuItemDTO } from "@/lib/services/catalog";
 import { addDays, campusDateKey, campusDayRange, campusWeekday } from "@/lib/time";
 
-// Non-ML fallbacks for the two ML modules (SRS §3.9, §3.10). The Python models
-// that will live in ml/ are not integrated yet. Until they are, the app uses
-// documented heuristics so it never blocks ordering (NFR-05, NFR-56, BR-13).
+// Reads the output of the Python ML jobs in ml/ (SRS §3.9, §3.10) and falls back
+// to documented heuristics whenever model output is missing or insufficient, so
+// ordering never depends on ML (NFR-05, NFR-56, BR-13).
 // See decisions/0006-ml-integration-boundary.md.
 
 const ACTIVE_STATUSES = ["PLACED", "ACCEPTED", "PREPARING", "READY", "COMPLETED"] as const;
 
-export type RecommendationStrategy = "PERSONAL_HISTORY" | "POPULARITY" | "NEW_ITEMS";
+export type RecommendationStrategy = "MODEL_PERSONAL" | "MODEL_GLOBAL" | "PERSONAL_HISTORY" | "POPULARITY" | "NEW_ITEMS";
 export type Recommendation = MenuItemDTO & { stallName: string; reason: string };
 
 const PERSONAL_MIN_ORDERS = 3;
+const MODEL_REASON: Record<string, string> = {
+  REORDER: "You order this often",
+  SIMILAR: "Often ordered with your favourites",
+  POPULAR: "Popular on campus",
+};
 const POPULARITY_WINDOW_DAYS = 30;
 
 /**
  * Recommendations for immediate purchase (FR-75…FR-81):
+ * 0. ML output (`recommendation_result`, latest model version): the student's own
+ *    ranking, or the global ranking for new or anonymous students.
+ * Then, to fill any remaining places (or when no model has run):
  * 1. Students with ≥3 completed orders: items they reorder most.
  * 2. Otherwise, or to fill gaps: most-ordered items over the last 30 days.
  * 3. With no order data at all: newest available items.
@@ -42,7 +50,35 @@ export async function getRecommendations(
   const inOrder = <T extends { id: string }>(rows: T[], ids: string[]) =>
     ids.map((id) => rows.find((r) => r.id === id)).filter((r): r is T => Boolean(r));
 
-  if (userId) {
+  const latest = await db.recommendationResult.findFirst({
+    orderBy: { generatedAt: "desc" },
+    select: { modelVersion: true },
+  });
+  if (latest) {
+    const ranked = (forUser: string | null) =>
+      db.recommendationResult.findMany({
+        where: { modelVersion: latest.modelVersion, userId: forUser, menuItem: eligible },
+        orderBy: { rank: "asc" },
+        take: limit,
+        include: { menuItem: { include: { stall: { select: { name: true } } } } },
+      });
+    let rows = userId ? await ranked(userId) : [];
+    strategy = "MODEL_PERSONAL";
+    if (!rows.length) {
+      rows = await ranked(null);
+      strategy = "MODEL_GLOBAL";
+    }
+    for (const r of rows) {
+      picked.set(r.menuItemId, {
+        ...toMenuItemDTO(r.menuItem),
+        stallName: r.menuItem.stall.name,
+        reason: MODEL_REASON[r.reason] ?? "Recommended",
+      });
+    }
+    if (!picked.size) strategy = "NEW_ITEMS";
+  }
+
+  if (userId && picked.size < limit) {
     const completed = await db.order.count({ where: { studentId: userId, status: "COMPLETED" } });
     if (completed >= PERSONAL_MIN_ORDERS) {
       const favourites = await db.orderItem.groupBy({
@@ -53,8 +89,9 @@ export async function getRecommendations(
         take: limit,
       });
       const ids = favourites.map((f) => f.menuItemId);
+      const before = picked.size;
       add(inOrder(await loadItems(ids), ids), "You order this often");
-      if (picked.size) strategy = "PERSONAL_HISTORY";
+      if (strategy === "NEW_ITEMS" && picked.size > before) strategy = "PERSONAL_HISTORY";
     }
   }
 
@@ -104,8 +141,44 @@ export type Forecast = {
   method: string;
   modelVersion: string | null;
   generatedAt: string;
+  /** Held-out evaluation of the model that produced these numbers (FR-71, NFR-52). */
+  evaluation: ForecastEvaluation | null;
   rows: ForecastRow[];
 };
+
+export type ForecastEvaluation = {
+  algorithm: string;
+  testMae: number;
+  baselineMae: number;
+  improvementPct: number;
+  testFrom: string;
+  testTo: string;
+  syntheticShare: number;
+};
+
+async function forecastEvaluation(modelVersion: string): Promise<ForecastEvaluation | null> {
+  const run = await db.modelRun.findUnique({
+    where: { task_modelVersion: { task: "FORECAST", modelVersion } },
+  });
+  if (!run) return null;
+  const m = run.metrics as {
+    chosen?: string;
+    baseline?: string;
+    test_mae?: Record<string, number>;
+    improvement_vs_baseline_pct?: number;
+    split?: { test_from?: string; test_to?: string };
+  };
+  if (!m.chosen || !m.baseline || !m.test_mae) return null;
+  return {
+    algorithm: run.algorithm,
+    testMae: m.test_mae[m.chosen],
+    baselineMae: m.test_mae[m.baseline],
+    improvementPct: m.improvement_vs_baseline_pct ?? 0,
+    testFrom: m.split?.test_from ?? "",
+    testTo: m.split?.test_to ?? "",
+    syntheticShare: run.syntheticShare,
+  };
+}
 
 const BASELINE_WEEKS = 4;
 const BASELINE_MIN_WEEKS = 2;
@@ -161,6 +234,7 @@ export async function getDemandForecast(stallId: string, dateKey: string): Promi
       method: "ML model output",
       modelVersion: latestVersion,
       generatedAt: modelRows[0].generatedAt.toISOString(),
+      evaluation: await forecastEvaluation(latestVersion),
       rows: items.map((i) => ({
         menuItemId: i.id,
         name: i.name,
@@ -179,6 +253,7 @@ export async function getDemandForecast(stallId: string, dateKey: string): Promi
     method: `Mean of the same weekday over the last ${BASELINE_WEEKS} weeks (${weekdayName(dateKey)}s)`,
     modelVersion: null,
     generatedAt: new Date().toISOString(),
+    evaluation: null,
     rows: items.map((i) => {
       const h = history.get(i.id) ?? [];
       return {

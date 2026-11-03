@@ -11,6 +11,8 @@ import type { PlaceOrderInput } from "@/lib/validation";
 // PostgreSQL database. Requires TEST_DATABASE_URL.
 
 const TABLES = [
+  "model_run",
+  "recommendation_result",
   "recommendation_event",
   "forecast_result",
   "notification",
@@ -308,9 +310,53 @@ describe("insight fallbacks", () => {
         modelVersion: "rf-v1",
       },
     });
+    await db.modelRun.create({
+      data: {
+        task: "FORECAST",
+        modelVersion: "rf-v1",
+        algorithm: "random_forest",
+        metrics: {
+          chosen: "random_forest",
+          baseline: "same_weekday_mean_4w",
+          test_mae: { random_forest: 2.4, same_weekday_mean_4w: 2.8 },
+          improvement_vs_baseline_pct: 14.3,
+          split: { test_from: "2026-10-26", test_to: "2026-11-02" },
+        },
+        syntheticShare: 1,
+        trainRows: 100,
+        dataFrom: new Date("2026-10-01"),
+        dataTo: new Date("2026-11-02"),
+      },
+    });
     const forecast = await getDemandForecast(f.stall.id, date);
     expect(forecast.source).toBe("MODEL");
     expect(forecast.modelVersion).toBe("rf-v1");
     expect(forecast.rows.find((r) => r.menuItemId === f.dosa.id)?.predicted).toBe(42);
+    expect(forecast.evaluation).toMatchObject({ testMae: 2.4, baselineMae: 2.8, improvementPct: 14.3, syntheticShare: 1 });
+  });
+
+  it("FR-75/78/79: uses model rankings, skips sold-out items and falls back to the global ranking", async () => {
+    const f = await fixtures();
+    const juice = await db.menuItem.create({ data: { stallId: f.stall.id, name: "Juice", price: 30 } });
+    const rows = [
+      { userId: f.alice.id, menuItemId: f.coffee.id, rank: 1, reason: "REORDER" },
+      { userId: f.alice.id, menuItemId: f.dosa.id, rank: 2, reason: "SIMILAR" },
+      { userId: null, menuItemId: juice.id, rank: 1, reason: "POPULAR" },
+    ];
+    await db.recommendationResult.createMany({
+      data: rows.map((r) => ({ ...r, score: 1 / r.rank, modelVersion: "rec-v1" })),
+    });
+
+    const personal = await getRecommendations(f.alice.id, 3);
+    expect(personal.strategy).toBe("MODEL_PERSONAL");
+    expect(personal.items.slice(0, 2).map((i) => i.id)).toEqual([f.coffee.id, f.dosa.id]);
+    expect(personal.items[1].reason).toMatch(/favourites/);
+
+    await db.menuItem.update({ where: { id: f.coffee.id }, data: { isAvailable: false } });
+    expect((await getRecommendations(f.alice.id, 3)).items.map((i) => i.id)).not.toContain(f.coffee.id);
+
+    const newcomer = await getRecommendations(f.bob.id, 1);
+    expect(newcomer.strategy).toBe("MODEL_GLOBAL");
+    expect(newcomer.items.map((i) => i.id)).toEqual([juice.id]);
   });
 });

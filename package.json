@@ -13,7 +13,9 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ml:train": "cd ml && .venv/bin/python -m canteen_ml all",
+    "ml:test": "cd ml && .venv/bin/python -m pytest -q"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

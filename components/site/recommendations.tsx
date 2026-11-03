@@ -10,12 +10,14 @@ import { formatINR } from "@/lib/domain/money";
 import { getRecommendations } from "@/lib/services/insights";
 
 const HEADLINE = {
+  MODEL_PERSONAL: "Recommended for you",
+  MODEL_GLOBAL: "Popular on campus",
   PERSONAL_HISTORY: "Picked for you",
   POPULARITY: "Popular on campus",
   NEW_ITEMS: "Available right now",
 } as const;
 
-// UC-04. Heuristic recommendations until the ML module in ml/ is connected.
+// UC-04. ML recommendations from ml/ when available, otherwise heuristics.
 export async function Recommendations() {
   await connection();
   const user = await getCurrentUser();
@@ -30,9 +32,11 @@ export async function Recommendations() {
             <SparklesIcon className="size-4 text-primary" aria-hidden /> {HEADLINE[strategy]}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {strategy === "PERSONAL_HISTORY"
-              ? "Based on your past orders, plus what's popular."
-              : "Based on recent orders across campus."}
+            {strategy === "MODEL_PERSONAL"
+              ? "Ranked by our recommendation model from your past orders and campus trends."
+              : strategy === "PERSONAL_HISTORY"
+                ? "Based on your past orders, plus what's popular."
+                : "Based on recent orders across campus."}
           </p>
         </div>
       </div>
