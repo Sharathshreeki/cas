@@ -50,10 +50,14 @@ export async function getRecommendations(
   const inOrder = <T extends { id: string }>(rows: T[], ids: string[]) =>
     ids.map((id) => rows.find((r) => r.id === id)).filter((r): r is T => Boolean(r));
 
-  const latest = await db.recommendationResult.findFirst({
-    orderBy: { generatedAt: "desc" },
-    select: { modelVersion: true },
-  });
+  // Model output is optional: any failure here (e.g. ML tables not migrated
+  // yet) falls through to the heuristics below instead of breaking the page.
+  const latest = await db.recommendationResult
+    .findFirst({ orderBy: { generatedAt: "desc" }, select: { modelVersion: true } })
+    .catch((error: unknown) => {
+      console.error("Model recommendations unavailable, using fallback:", error);
+      return null;
+    });
   if (latest) {
     const ranked = (forUser: string | null) =>
       db.recommendationResult.findMany({
@@ -157,9 +161,12 @@ export type ForecastEvaluation = {
 };
 
 async function forecastEvaluation(modelVersion: string): Promise<ForecastEvaluation | null> {
-  const run = await db.modelRun.findUnique({
-    where: { task_modelVersion: { task: "FORECAST", modelVersion } },
-  });
+  const run = await db.modelRun
+    .findUnique({ where: { task_modelVersion: { task: "FORECAST", modelVersion } } })
+    .catch((error: unknown) => {
+      console.error("Model evaluation unavailable:", error);
+      return null;
+    });
   if (!run) return null;
   const m = run.metrics as {
     chosen?: string;

@@ -41,7 +41,7 @@ async function Overview() {
     }),
     Promise.all(
       (["FORECAST", "RECOMMEND"] as const).map((task) =>
-        db.modelRun.findFirst({ where: { task }, orderBy: { createdAt: "desc" } }),
+        db.modelRun.findFirst({ where: { task }, orderBy: { createdAt: "desc" } }).catch(() => null),
       ),
     ),
   ]);

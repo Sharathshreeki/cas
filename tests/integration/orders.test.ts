@@ -335,6 +335,18 @@ describe("insight fallbacks", () => {
     expect(forecast.evaluation).toMatchObject({ testMae: 2.4, baselineMae: 2.8, improvementPct: 14.3, syntheticShare: 1 });
   });
 
+  it("NFR-05/56: falls back to heuristics when the ML tables are missing", async () => {
+    const f = await fixtures();
+    await db.$executeRawUnsafe(`ALTER TABLE recommendation_result RENAME TO recommendation_result_hidden`);
+    try {
+      const recs = await getRecommendations(f.alice.id);
+      expect(recs.strategy).toBe("NEW_ITEMS");
+      expect(recs.items.length).toBeGreaterThan(0);
+    } finally {
+      await db.$executeRawUnsafe(`ALTER TABLE recommendation_result_hidden RENAME TO recommendation_result`);
+    }
+  });
+
   it("FR-75/78/79: uses model rankings, skips sold-out items and falls back to the global ranking", async () => {
     const f = await fixtures();
     const juice = await db.menuItem.create({ data: { stallId: f.stall.id, name: "Juice", price: 30 } });
